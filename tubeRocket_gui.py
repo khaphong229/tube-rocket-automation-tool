@@ -1,212 +1,302 @@
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 import threading
-import requests as ss
 import time
-import os
-from os import path
+from datetime import datetime
+from database import DatabaseManager
+from account_dialog import AccountDialog
+from tuberocket_worker import TubeRocketWorker
+from proxy_manager import ProxyManager
 
 class TubeRocketGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("TubeRocket Tool")
-        self.root.geometry("600x500")
+        self.root.title("TubeRocket Multi-Account Manager")
+        self.root.geometry("1200x800")
         
-        self.session = ss.Session()
-        self.running = False
-        self.thread = None
+        self.db = DatabaseManager()
+        self.workers = {}
+        self.stop_events = {}
         
         self.setup_ui()
-        self.load_token()
+        self.refresh_accounts()
     
     def setup_ui(self):
-        # Token frame
-        token_frame = ttk.Frame(self.root, padding="10")
-        token_frame.pack(fill=tk.X)
+        # Create main container
+        main_container = ttk.Frame(self.root)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        ttk.Label(token_frame, text="TubeRocket Token:").pack(anchor=tk.W)
-        self.token_entry = ttk.Entry(token_frame, width=50, show="*")
-        self.token_entry.pack(fill=tk.X, pady=(5, 0))
+        # Create vertical paned window
+        main_paned = ttk.PanedWindow(main_container, orient=tk.VERTICAL)
+        main_paned.pack(fill=tk.BOTH, expand=True)
         
-        # Buttons frame
-        button_frame = ttk.Frame(self.root, padding="10")
-        button_frame.pack(fill=tk.X)
+        # Top panel - Account management
+        top_frame = ttk.Frame(main_paned)
+        main_paned.add(top_frame, weight=3)
         
-        self.start_btn = ttk.Button(button_frame, text="Start", command=self.start_process)
-        self.start_btn.pack(side=tk.LEFT, padx=(0, 10))
+        # Account controls
+        control_frame = ttk.Frame(top_frame)
+        control_frame.pack(fill=tk.X, padx=5, pady=(5, 10))
         
-        self.stop_btn = ttk.Button(button_frame, text="Stop", command=self.stop_process, state=tk.DISABLED)
-        self.stop_btn.pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(control_frame, text="Add Account", command=self.add_account).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="Edit Account", command=self.edit_account).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="Delete Account", command=self.delete_account).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="Proxy Manager", command=self.open_proxy_manager).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="Refresh", command=self.refresh_accounts).pack(side=tk.LEFT, padx=(0, 10))
         
-        self.save_token_btn = ttk.Button(button_frame, text="Save Token", command=self.save_token)
-        self.save_token_btn.pack(side=tk.LEFT)
+        ttk.Separator(control_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
         
-        # Status frame
-        status_frame = ttk.Frame(self.root, padding="10")
-        status_frame.pack(fill=tk.X)
+        ttk.Button(control_frame, text="Start Selected", command=self.start_selected).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="Stop Selected", command=self.stop_selected).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="Start All", command=self.start_all).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="Stop All", command=self.stop_all).pack(side=tk.LEFT)
         
-        ttk.Label(status_frame, text="Account Info:").pack(anchor=tk.W)
-        self.status_label = ttk.Label(status_frame, text="Not connected", foreground="red")
-        self.status_label.pack(anchor=tk.W, pady=(5, 0))
+        # Accounts treeview
+        tree_frame = ttk.Frame(top_frame)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=5)
         
-        # Log frame
-        log_frame = ttk.Frame(self.root, padding="10")
-        log_frame.pack(fill=tk.BOTH, expand=True)
+        columns = ('ID', 'Name', 'Email', 'Coins', 'Status', 'Videos', 'Total Coins', 'Last Run')
+        self.accounts_tree = ttk.Treeview(tree_frame, columns=columns, show='headings', selectmode='extended')
         
-        ttk.Label(log_frame, text="Activity Log:").pack(anchor=tk.W)
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=15, state=tk.DISABLED)
-        self.log_text.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+        # Configure columns
+        self.accounts_tree.heading('ID', text='ID')
+        self.accounts_tree.heading('Name', text='Name')
+        self.accounts_tree.heading('Email', text='Email')
+        self.accounts_tree.heading('Coins', text='Current Coins')
+        self.accounts_tree.heading('Status', text='Status')
+        self.accounts_tree.heading('Videos', text='Videos')
+        self.accounts_tree.heading('Total Coins', text='Total Coins')
+        self.accounts_tree.heading('Last Run', text='Last Run')
         
-        # Progress frame
-        progress_frame = ttk.Frame(self.root, padding="10")
-        progress_frame.pack(fill=tk.X)
+        self.accounts_tree.column('ID', width=50)
+        self.accounts_tree.column('Name', width=120)
+        self.accounts_tree.column('Email', width=150)
+        self.accounts_tree.column('Coins', width=100)
+        self.accounts_tree.column('Status', width=120)
+        self.accounts_tree.column('Videos', width=80)
+        self.accounts_tree.column('Total Coins', width=100)
+        self.accounts_tree.column('Last Run', width=150)
         
-        self.progress_label = ttk.Label(progress_frame, text="Ready")
-        self.progress_label.pack(anchor=tk.W)
+        # Scrollbars for treeview
+        tree_scroll_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.accounts_tree.yview)
+        tree_scroll_x = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.accounts_tree.xview)
+        self.accounts_tree.configure(yscrollcommand=tree_scroll_y.set, xscrollcommand=tree_scroll_x.set)
         
-        self.progress_bar = ttk.Progressbar(progress_frame, mode='indeterminate')
-        self.progress_bar.pack(fill=tk.X, pady=(5, 0))
+        self.accounts_tree.grid(row=0, column=0, sticky='nsew')
+        tree_scroll_y.grid(row=0, column=1, sticky='ns')
+        tree_scroll_x.grid(row=1, column=0, sticky='ew')
+        
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
+        
+        # Bottom panel - Logs (smaller)
+        bottom_frame = ttk.Frame(main_paned)
+        main_paned.add(bottom_frame, weight=1)
+        
+        # Log controls
+        log_control_frame = ttk.Frame(bottom_frame)
+        log_control_frame.pack(fill=tk.X, padx=5, pady=(5, 5))
+        
+        ttk.Label(log_control_frame, text="Activity Logs:", font=('TkDefaultFont', 9, 'bold')).pack(side=tk.LEFT)
+        ttk.Button(log_control_frame, text="Clear Logs", command=self.clear_logs).pack(side=tk.RIGHT)
+        
+        # Log text area (smaller height)
+        self.log_text = scrolledtext.ScrolledText(bottom_frame, height=8, state=tk.DISABLED, font=('Consolas', 8))
+        self.log_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=(0, 5))
+        
+        # Status bar
+        self.status_bar = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
     
-    def load_token(self):
-        if path.exists("token_tube_rocket.txt"):
-            try:
-                with open("token_tube_rocket.txt", "r") as f:
-                    token = f.readline().strip()
-                    self.token_entry.insert(0, token)
-            except:
-                pass
+    def refresh_accounts(self):
+        # Clear existing items
+        for item in self.accounts_tree.get_children():
+            self.accounts_tree.delete(item)
+        
+        # Load accounts from database
+        accounts = self.db.get_all_accounts()
+        for account in accounts:
+            last_run = account['last_run'] if account['last_run'] else 'Never'
+            if last_run != 'Never':
+                try:
+                    last_run = datetime.fromisoformat(last_run.replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
+                except:
+                    pass
+            
+            self.accounts_tree.insert('', tk.END, values=(
+                account['id'],
+                account['name'],
+                account['email'] or 'Unknown',
+                account['coin'],
+                account['status'],
+                account['total_videos'],
+                account['total_coins'],
+                last_run
+            ))
+        
+        self.status_bar.config(text=f"Loaded {len(accounts)} accounts")
     
-    def save_token(self):
-        token = self.token_entry.get().strip()
-        if token:
+    def add_account(self):
+        dialog = AccountDialog(self.root)
+        self.root.wait_window(dialog.dialog)
+        
+        if dialog.result:
             try:
-                with open("token_tube_rocket.txt", "w") as f:
-                    f.write(token)
-                self.log_message("Token saved successfully!")
-                messagebox.showinfo("Success", "Token saved successfully!")
+                self.db.add_account(
+                    dialog.result['name'],
+                    dialog.result['token'],
+                    dialog.result['proxy'],
+                    dialog.result['delay'],
+                    dialog.result['config']
+                )
+                self.refresh_accounts()
+                self.log_message(f"Added account: {dialog.result['name']}")
             except Exception as e:
-                self.log_message(f"Error saving token: {str(e)}")
-                messagebox.showerror("Error", f"Error saving token: {str(e)}")
-        else:
-            messagebox.showwarning("Warning", "Please enter a token first!")
+                messagebox.showerror("Error", f"Failed to add account: {str(e)}")
+    
+    def edit_account(self):
+        selected = self.accounts_tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "Please select an account to edit!")
+            return
+        
+        account_id = self.accounts_tree.item(selected[0])['values'][0]
+        accounts = self.db.get_all_accounts()
+        account_data = next((acc for acc in accounts if acc['id'] == account_id), None)
+        
+        if account_data:
+            dialog = AccountDialog(self.root, account_data)
+            self.root.wait_window(dialog.dialog)
+            
+            if dialog.result:
+                try:
+                    self.db.update_account(
+                        account_id,
+                        dialog.result['name'],
+                        dialog.result['token'],
+                        dialog.result['proxy'],
+                        dialog.result['delay'],
+                        dialog.result['config']
+                    )
+                    self.refresh_accounts()
+                    self.log_message(f"Updated account: {dialog.result['name']}")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to update account: {str(e)}")
+    
+    def delete_account(self):
+        selected = self.accounts_tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "Please select an account to delete!")
+            return
+        
+        if messagebox.askyesno("Confirm", "Are you sure you want to delete the selected account(s)?"):
+            for item in selected:
+                account_id = self.accounts_tree.item(item)['values'][0]
+                account_name = self.accounts_tree.item(item)['values'][1]
+                
+                # Stop worker if running
+                if account_id in self.workers:
+                    self.stop_worker(account_id)
+                
+                self.db.delete_account(account_id)
+                self.log_message(f"Deleted account: {account_name}")
+            
+            self.refresh_accounts()
+    
+    def start_selected(self):
+        selected = self.accounts_tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "Please select accounts to start!")
+            return
+        
+        for item in selected:
+            account_id = self.accounts_tree.item(item)['values'][0]
+            self.start_worker(account_id)
+    
+    def stop_selected(self):
+        selected = self.accounts_tree.selection()
+        if not selected:
+            messagebox.showwarning("Warning", "Please select accounts to stop!")
+            return
+        
+        for item in selected:
+            account_id = self.accounts_tree.item(item)['values'][0]
+            self.stop_worker(account_id)
+    
+    def start_all(self):
+        accounts = self.db.get_all_accounts()
+        for account in accounts:
+            self.start_worker(account['id'])
+    
+    def stop_all(self):
+        for account_id in list(self.workers.keys()):
+            self.stop_worker(account_id)
+    
+    def start_worker(self, account_id):
+        if account_id in self.workers and self.workers[account_id].is_alive():
+            return  # Already running
+        
+        accounts = self.db.get_all_accounts()
+        account_data = next((acc for acc in accounts if acc['id'] == account_id), None)
+        
+        if account_data:
+            stop_event = threading.Event()
+            worker = TubeRocketWorker(account_data, self.worker_callback, stop_event)
+            
+            self.workers[account_id] = worker
+            self.stop_events[account_id] = stop_event
+            
+            worker.start()
+            self.log_message(f"Started worker for account: {account_data['name']}")
+    
+    def stop_worker(self, account_id):
+        if account_id in self.stop_events:
+            self.stop_events[account_id].set()
+        
+        if account_id in self.workers:
+            del self.workers[account_id]
+        
+        if account_id in self.stop_events:
+            del self.stop_events[account_id]
+        
+        # Update status in database
+        self.db.update_account_status(account_id, "Stopped")
+        self.refresh_accounts()
+    
+    def worker_callback(self, account_id, callback_type, data):
+        if callback_type == 'log':
+            self.log_message(f"[ID:{account_id}] {data}")
+        elif callback_type == 'status':
+            self.db.update_account_status(account_id, data['status'], data.get('email'), data.get('coin'))
+            self.root.after(0, self.refresh_accounts)
+        elif callback_type == 'stats':
+            self.db.update_account_stats(account_id, data['videos'], data['coins'])
     
     def log_message(self, message):
         self.log_text.config(state=tk.NORMAL)
-        self.log_text.insert(tk.END, f"[{time.strftime('%H:%M:%S')}] {message}\n")
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)
     
-    def start_process(self):
-        token = self.token_entry.get().strip()
-        if not token:
-            messagebox.showwarning("Warning", "Please enter your TubeRocket token!")
-            return
-        
-        self.running = True
-        self.start_btn.config(state=tk.DISABLED)
-        self.stop_btn.config(state=tk.NORMAL)
-        self.progress_bar.start()
-        
-        self.thread = threading.Thread(target=self.run_tuberocket, args=(token,))
-        self.thread.daemon = True
-        self.thread.start()
+    def clear_logs(self):
+        self.log_text.config(state=tk.NORMAL)
+        self.log_text.delete(1.0, tk.END)
+        self.log_text.config(state=tk.DISABLED)
     
-    def stop_process(self):
-        self.running = False
-        self.start_btn.config(state=tk.NORMAL)
-        self.stop_btn.config(state=tk.DISABLED)
-        self.progress_bar.stop()
-        self.progress_label.config(text="Stopping...")
-        self.log_message("Stop requested by user")
-    
-    def run_tuberocket(self, token):
-        try:
-            # Get account info
-            self.progress_label.config(text="Connecting...")
-            self.log_message("Connecting to TubeRocket...")
-            
-            head_get_info = {
-                "Host": "tuberocket.app:3000",
-                "token": token,
-            }
-            
-            get_info = self.session.get("http://tuberocket.app:3000/api/member", headers=head_get_info).json()
-            email = get_info["result"]["email"]
-            coin = get_info["result"]["coin"]
-            
-            self.status_label.config(text=f"{email} | Coins: {coin}", foreground="green")
-            self.log_message(f"Connected: {email} | Coins: {coin}")
-            
-            head_run_video = {
-                "Host": "tuberocket.app:3000",
-                "token": token,
-                "Content-Length": "71",
-                "Content-Type": "application/json; charset=UTF-8",
-            }
-            
-            cnt = 0
-            
-            while self.running:
-                try:
-                    # Get video
-                    get_video = self.session.get(
-                        "http://tuberocket.app:3000/api/video", headers=head_get_info
-                    ).json()
-                    id_video = get_video["result"]["videoId"]
-                    time_video = get_video["result"]["playSecond"]
-                    
-                    self.log_message(f"Processing video {id_video} - Wait {time_video} seconds")
-                    
-                    # Wait for video duration
-                    for i in range(time_video, 0, -1):
-                        if not self.running:
-                            break
-                        self.progress_label.config(text=f"Waiting {i} seconds for video {id_video}")
-                        time.sleep(1)
-                    
-                    if not self.running:
-                        break
-                    
-                    # Receive coin
-                    data_receive_coin = {
-                        "id": id_video,
-                        "playCount": 0,
-                        "playSecond": 0,
-                        "boost": 0,
-                        "status": "",
-                    }
-                    
-                    receive = self.session.put(
-                        "http://tuberocket.app:3000/api/video",
-                        headers=head_run_video,
-                        json=data_receive_coin,
-                    ).json()
-                    
-                    received_coin = receive["result"]["coin"]
-                    cnt += 1
-                    
-                    self.log_message(f"#{cnt} | Video {id_video} | Coins: {received_coin}")
-                    self.progress_label.config(text=f"Completed #{cnt} videos")
-                    
-                except Exception as e:
-                    self.log_message(f"Error processing video: {str(e)}")
-                    if "banned" in str(e).lower() or "expired" in str(e).lower():
-                        self.status_label.config(text="Account banned or token expired!", foreground="red")
-                        break
-                    time.sleep(5)  # Wait before retry
-            
-        except Exception as e:
-            self.log_message(f"Connection error: {str(e)}")
-            self.status_label.config(text="Connection failed!", foreground="red")
-        
-        finally:
-            self.running = False
-            self.root.after(0, self.stop_process)
-            self.progress_label.config(text="Stopped")
+    def open_proxy_manager(self):
+        ProxyManager(self.root, self.db)
 
 def main():
     root = tk.Tk()
     app = TubeRocketGUI(root)
+    
+    def on_closing():
+        app.stop_all()
+        time.sleep(1)  # Give workers time to stop
+        root.destroy()
+    
+    root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()
 
 if __name__ == "__main__":
