@@ -276,7 +276,12 @@ class ProxyManager:
                 self.db.update_account(
                     account['id'],
                     account['name'],
-                    account['token'],
+                    account['token_signin'],
+                    account['version_code'],
+                    account['android'],
+                    account['device'],
+                    account['locale'],
+                    account['device_token'],
                     proxy,
                     account['delay'],
                     account['config']
@@ -293,7 +298,12 @@ class ProxyManager:
                 self.db.update_account(
                     account['id'],
                     account['name'],
-                    account['token'],
+                    account['token_signin'],
+                    account['version_code'],
+                    account['android'],
+                    account['device'],
+                    account['locale'],
+                    account['device_token'],
                     "",  # Clear proxy
                     account['delay'],
                     account['config']

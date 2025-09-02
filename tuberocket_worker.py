@@ -33,22 +33,66 @@ class TubeRocketWorker(Thread):
     
     def run(self):
         account_id = self.account_data['id']
-        token = self.account_data['token']
+        token_signin = self.account_data.get('token_signin', '')
+        
+        if not token_signin:
+            self.log("Error: No sign-in token provided!")
+            self.update_status("Error - No Sign-in Token")
+            return
+        
+        version_code = self.account_data.get('version_code', 187)
+        android = self.account_data.get('android', 29)
+        device = self.account_data.get('device', '')
+        locale = self.account_data.get('locale', 'VN')
+        device_token = self.account_data.get('device_token', '')
         delay = self.account_data['delay']
         
         try:
             self.log("Starting TubeRocket worker...")
             self.update_status("Connecting")
+
+            # Sign-in to get real token
+            head_sign_in = {
+                "Host": "tuberocket.app:3000",
+                "token": token_signin,
+                "versionCode": str(version_code),
+                "android": str(android),
+                "device": device,
+                "locale": locale,
+                "deviceToken": device_token,
+                "Content-length": "0",
+            }
+
+            self.log("Performing sign-in...")
+            response_signin = self.session.post("http://tuberocket.app:3000/api/signin", headers=head_sign_in)
             
-            # Get account info
+            if response_signin.status_code != 200:
+                raise Exception(f"Sign-in failed: HTTP {response_signin.status_code}")
+            
+            signin_data = response_signin.json()
+            
+            if signin_data.get("retMessage") != "Success!!":
+                raise Exception(f"Sign-in failed: {signin_data.get('retMessage', 'Unknown error')}")
+            
+            # Get the real token from response
+            real_token = signin_data["result"]["token"]
+            youtube_api_key = signin_data["result"].get("youtube_api_key", "")
+            
+            self.log(f"Sign-in successful. Got real token: {real_token[:10]}...")
+            
+            # Update token in database
+            if self.callback:
+                self.callback(self.account_data['id'], 'update_token', real_token)
+            
+            # Get account info using real token
             head_get_info = {
                 "Host": "tuberocket.app:3000",
-                "token": token,
+                "token": real_token,
             }
             
             response = self.session.get("http://tuberocket.app:3000/api/member", headers=head_get_info)
             if response.status_code != 200:
-                raise Exception(f"Failed to connect: {response.status_code}")
+                raise Exception(f"Failed to get member info: {response.status_code}")
             
             get_info = response.json()
             email = get_info["result"]["email"]
@@ -59,7 +103,7 @@ class TubeRocketWorker(Thread):
             
             head_run_video = {
                 "Host": "tuberocket.app:3000",
-                "token": token,
+                "token": real_token,
                 "Content-Length": "71",
                 "Content-Type": "application/json; charset=UTF-8",
             }

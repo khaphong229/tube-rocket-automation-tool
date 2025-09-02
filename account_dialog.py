@@ -24,53 +24,104 @@ class AccountDialog:
         main_frame = ttk.Frame(self.dialog, padding="20")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
+        # Create notebook for tabs
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill=tk.BOTH, expand=True)
+        
+        # Basic Info Tab
+        basic_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(basic_frame, text="Basic Info")
+        
         # Account name
-        ttk.Label(main_frame, text="Account Name:").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
-        self.name_entry = ttk.Entry(main_frame, width=50)
+        ttk.Label(basic_frame, text="Account Name:").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
+        self.name_entry = ttk.Entry(basic_frame, width=50)
         self.name_entry.grid(row=0, column=1, columnspan=2, sticky=tk.EW, pady=(0, 10))
         
-        # Token
-        ttk.Label(main_frame, text="Token:").grid(row=1, column=0, sticky=tk.W, pady=(0, 5))
-        self.token_entry = ttk.Entry(main_frame, width=50, show="*")
-        self.token_entry.grid(row=1, column=1, columnspan=2, sticky=tk.EW, pady=(0, 10))
+        # Sign-in Token
+        ttk.Label(basic_frame, text="Sign-in Token:").grid(row=1, column=0, sticky=tk.W, pady=(0, 5))
+        self.token_signin_entry = ttk.Entry(basic_frame, width=50, show="*")
+        self.token_signin_entry.grid(row=1, column=1, columnspan=2, sticky=tk.EW, pady=(0, 10))
         
         # Show/Hide token button
-        self.show_token_btn = ttk.Button(main_frame, text="Show", command=self.toggle_token_visibility)
+        self.show_token_btn = ttk.Button(basic_frame, text="Show", command=self.toggle_token_visibility)
         self.show_token_btn.grid(row=1, column=3, padx=(5, 0), pady=(0, 10))
         
+        # Info about real token
+        token_info = ttk.Label(basic_frame, text="Real token will be obtained automatically from sign-in", 
+                              font=('TkDefaultFont', 8), foreground='gray')
+        token_info.grid(row=2, column=1, columnspan=2, sticky=tk.W, pady=(0, 10))
+        
+        # Device Info Tab
+        device_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(device_frame, text="Device Info")
+        
+        # Version Code
+        ttk.Label(device_frame, text="Version Code:").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
+        self.version_code_var = tk.IntVar(value=187)
+        self.version_code_spin = ttk.Spinbox(device_frame, from_=100, to=999, textvariable=self.version_code_var, width=15)
+        self.version_code_spin.grid(row=0, column=1, sticky=tk.W, pady=(0, 10))
+        
+        # Android Version
+        ttk.Label(device_frame, text="Android Version:").grid(row=1, column=0, sticky=tk.W, pady=(0, 5))
+        self.android_var = tk.IntVar(value=29)
+        self.android_spin = ttk.Spinbox(device_frame, from_=21, to=34, textvariable=self.android_var, width=15)
+        self.android_spin.grid(row=1, column=1, sticky=tk.W, pady=(0, 10))
+        
+        # Device ID
+        ttk.Label(device_frame, text="Device ID:").grid(row=2, column=0, sticky=tk.W, pady=(0, 5))
+        self.device_entry = ttk.Entry(device_frame, width=50)
+        self.device_entry.grid(row=2, column=1, columnspan=2, sticky=tk.EW, pady=(0, 10))
+        
+        # Locale
+        ttk.Label(device_frame, text="Locale:").grid(row=3, column=0, sticky=tk.W, pady=(0, 5))
+        self.locale_var = tk.StringVar(value="VN")
+        self.locale_combo = ttk.Combobox(device_frame, textvariable=self.locale_var, values=["VN", "US", "EN", "TH", "ID"], width=15)
+        self.locale_combo.grid(row=3, column=1, sticky=tk.W, pady=(0, 10))
+        
+        # Device Token
+        ttk.Label(device_frame, text="Device Token:").grid(row=4, column=0, sticky=tk.W, pady=(0, 5))
+        self.device_token_entry = ttk.Entry(device_frame, width=50)
+        self.device_token_entry.grid(row=4, column=1, columnspan=2, sticky=tk.EW, pady=(0, 10))
+        
+        # Network Tab
+        network_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(network_frame, text="Network & Settings")
+        
         # Proxy
-        ttk.Label(main_frame, text="Proxy (optional):").grid(row=2, column=0, sticky=tk.W, pady=(0, 5))
-        self.proxy_entry = ttk.Entry(main_frame, width=50)
-        self.proxy_entry.grid(row=2, column=1, columnspan=2, sticky=tk.EW, pady=(0, 10))
+        ttk.Label(network_frame, text="Proxy (optional):").grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
+        self.proxy_entry = ttk.Entry(network_frame, width=50)
+        self.proxy_entry.grid(row=0, column=1, columnspan=2, sticky=tk.EW, pady=(0, 10))
         
         # Test proxy button
-        self.test_proxy_btn = ttk.Button(main_frame, text="Test", command=self.test_proxy)
-        self.test_proxy_btn.grid(row=2, column=3, padx=(5, 0), pady=(0, 10))
+        self.test_proxy_btn = ttk.Button(network_frame, text="Test", command=self.test_proxy)
+        self.test_proxy_btn.grid(row=0, column=3, padx=(5, 0), pady=(0, 10))
         
         # Proxy format info
-        proxy_info = ttk.Label(main_frame, text="Format: http://ip:port or http://user:pass@ip:port", font=('TkDefaultFont', 8))
-        proxy_info.grid(row=3, column=1, columnspan=2, sticky=tk.W, pady=(0, 5))
+        proxy_info = ttk.Label(network_frame, text="Format: http://ip:port or http://user:pass@ip:port", font=('TkDefaultFont', 8))
+        proxy_info.grid(row=1, column=1, columnspan=2, sticky=tk.W, pady=(0, 5))
         
         # Delay
-        ttk.Label(main_frame, text="Delay (seconds):").grid(row=4, column=0, sticky=tk.W, pady=(0, 5))
+        ttk.Label(network_frame, text="Delay (seconds):").grid(row=2, column=0, sticky=tk.W, pady=(0, 5))
         self.delay_var = tk.IntVar(value=5)
-        self.delay_spin = ttk.Spinbox(main_frame, from_=1, to=60, textvariable=self.delay_var, width=10)
-        self.delay_spin.grid(row=4, column=1, sticky=tk.W, pady=(0, 10))
+        self.delay_spin = ttk.Spinbox(network_frame, from_=1, to=60, textvariable=self.delay_var, width=10)
+        self.delay_spin.grid(row=2, column=1, sticky=tk.W, pady=(0, 10))
         
         # Notes
-        ttk.Label(main_frame, text="Notes:").grid(row=5, column=0, sticky=tk.NW, pady=(0, 5))
-        self.notes_text = tk.Text(main_frame, width=50, height=6)
-        self.notes_text.grid(row=5, column=1, columnspan=2, sticky=tk.EW, pady=(0, 10))
+        ttk.Label(network_frame, text="Notes:").grid(row=3, column=0, sticky=tk.NW, pady=(0, 5))
+        self.notes_text = tk.Text(network_frame, width=50, height=6)
+        self.notes_text.grid(row=3, column=1, columnspan=2, sticky=tk.EW, pady=(0, 10))
         
         # Buttons
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=6, column=0, columnspan=4, pady=(20, 0))
+        button_frame.pack(side=tk.BOTTOM, pady=(20, 0))
         
         ttk.Button(button_frame, text="Save", command=self.save_account).pack(side=tk.LEFT, padx=(0, 10))
         ttk.Button(button_frame, text="Cancel", command=self.dialog.destroy).pack(side=tk.LEFT)
         
         # Configure grid weights
-        main_frame.columnconfigure(1, weight=1)
+        basic_frame.columnconfigure(1, weight=1)
+        device_frame.columnconfigure(1, weight=1)
+        network_frame.columnconfigure(1, weight=1)
     
     def center_window(self):
         self.dialog.update_idletasks()
@@ -79,16 +130,21 @@ class AccountDialog:
         self.dialog.geometry(f"+{x}+{y}")
     
     def toggle_token_visibility(self):
-        if self.token_entry.cget("show") == "*":
-            self.token_entry.config(show="")
+        if self.token_signin_entry.cget("show") == "*":
+            self.token_signin_entry.config(show="")
             self.show_token_btn.config(text="Hide")
         else:
-            self.token_entry.config(show="*")
+            self.token_signin_entry.config(show="*")
             self.show_token_btn.config(text="Show")
     
     def load_account_data(self):
         self.name_entry.insert(0, self.account_data['name'])
-        self.token_entry.insert(0, self.account_data['token'])
+        self.token_signin_entry.insert(0, self.account_data['token_signin'])
+        self.version_code_var.set(self.account_data['version_code'])
+        self.android_var.set(self.account_data['android'])
+        self.device_entry.insert(0, self.account_data['device'])
+        self.locale_var.set(self.account_data['locale'])
+        self.device_token_entry.insert(0, self.account_data['device_token'])
         self.proxy_entry.insert(0, self.account_data['proxy'])
         self.delay_var.set(self.account_data['delay'])
         if 'notes' in self.account_data['config']:
@@ -96,24 +152,29 @@ class AccountDialog:
     
     def save_account(self):
         name = self.name_entry.get().strip()
-        token = self.token_entry.get().strip()
-        proxy = self.proxy_entry.get().strip()
+        token_signin = self.token_signin_entry.get().strip()
         
         if not name:
             messagebox.showwarning("Warning", "Please enter account name!")
             return
         
-        if not token:
-            messagebox.showwarning("Warning", "Please enter token!")
+        if not token_signin:
+            messagebox.showwarning("Warning", "Please enter sign-in token!")
             return
         
         # Auto-convert proxy format if provided
+        proxy = self.proxy_entry.get().strip()
         if proxy:
             proxy = self.parse_proxy(proxy)
         
         self.result = {
             'name': name,
-            'token': token,
+            'token_signin': token_signin,
+            'version_code': self.version_code_var.get(),
+            'android': self.android_var.get(),
+            'device': self.device_entry.get().strip(),
+            'locale': self.locale_var.get(),
+            'device_token': self.device_token_entry.get().strip(),
             'proxy': proxy,
             'delay': self.delay_var.get(),
             'config': {

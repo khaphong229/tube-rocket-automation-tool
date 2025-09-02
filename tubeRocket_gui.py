@@ -55,7 +55,7 @@ class TubeRocketGUI:
         tree_frame = ttk.Frame(top_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=5)
         
-        columns = ('ID', 'Name', 'Email', 'Coins', 'Status', 'Videos', 'Total Coins', 'Last Run')
+        columns = ('ID', 'Name', 'Email', 'Coins', 'Status', 'Videos', 'Total Coins', 'Token Status', 'Last Run')
         self.accounts_tree = ttk.Treeview(tree_frame, columns=columns, show='headings', selectmode='extended')
         
         # Configure columns
@@ -66,6 +66,7 @@ class TubeRocketGUI:
         self.accounts_tree.heading('Status', text='Status')
         self.accounts_tree.heading('Videos', text='Videos')
         self.accounts_tree.heading('Total Coins', text='Total Coins')
+        self.accounts_tree.heading('Token Status', text='Token')
         self.accounts_tree.heading('Last Run', text='Last Run')
         
         self.accounts_tree.column('ID', width=50)
@@ -75,7 +76,8 @@ class TubeRocketGUI:
         self.accounts_tree.column('Status', width=120)
         self.accounts_tree.column('Videos', width=80)
         self.accounts_tree.column('Total Coins', width=100)
-        self.accounts_tree.column('Last Run', width=150)
+        self.accounts_tree.column('Token Status', width=80)
+        self.accounts_tree.column('Last Run', width=130)
         
         # Scrollbars for treeview
         tree_scroll_y = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.accounts_tree.yview)
@@ -123,6 +125,9 @@ class TubeRocketGUI:
                 except:
                     pass
             
+            # Check token status
+            token_status = "✅ Ready" if account.get('token') else "❌ No Token"
+            
             self.accounts_tree.insert('', tk.END, values=(
                 account['id'],
                 account['name'],
@@ -131,6 +136,7 @@ class TubeRocketGUI:
                 account['status'],
                 account['total_videos'],
                 account['total_coins'],
+                token_status,
                 last_run
             ))
         
@@ -144,7 +150,12 @@ class TubeRocketGUI:
             try:
                 self.db.add_account(
                     dialog.result['name'],
-                    dialog.result['token'],
+                    dialog.result['token_signin'],
+                    dialog.result['version_code'],
+                    dialog.result['android'],
+                    dialog.result['device'],
+                    dialog.result['locale'],
+                    dialog.result['device_token'],
                     dialog.result['proxy'],
                     dialog.result['delay'],
                     dialog.result['config']
@@ -173,7 +184,12 @@ class TubeRocketGUI:
                     self.db.update_account(
                         account_id,
                         dialog.result['name'],
-                        dialog.result['token'],
+                        dialog.result['token_signin'],
+                        dialog.result['version_code'],
+                        dialog.result['android'],
+                        dialog.result['device'],
+                        dialog.result['locale'],
+                        dialog.result['device_token'],
                         dialog.result['proxy'],
                         dialog.result['delay'],
                         dialog.result['config']
@@ -271,6 +287,9 @@ class TubeRocketGUI:
             self.root.after(0, self.refresh_accounts)
         elif callback_type == 'stats':
             self.db.update_account_stats(account_id, data['videos'], data['coins'])
+        elif callback_type == 'update_token':
+            self.db.update_account_token(account_id, data)
+            self.log_message(f"[ID:{account_id}] Updated real token from sign-in")
     
     def log_message(self, message):
         self.log_text.config(state=tk.NORMAL)
