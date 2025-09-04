@@ -1,1 +1,11 @@
 accounts.db
+__pycache__
+build
+dist
+*.spec
+*.pyc
+*.pyo
+build_simple.bat
+build_exe.py
+.vscode
+build_console.py
