@@ -5,6 +5,8 @@ import time
 import sys
 import os
 from datetime import datetime
+import json
+from tkinter import filedialog
 
 # Add path for bundled resources when running as exe
 if getattr(sys, 'frozen', False):
@@ -22,6 +24,8 @@ try:
     from account_dialog import AccountDialog
     from tuberocket_worker import TubeRocketWorker
     from proxy_manager import ProxyManager
+    from export_dialog import ExportDialog
+    from import_dialog import ImportDialog
 except ImportError as e:
     messagebox.showerror("Import Error", f"Failed to import modules: {e}")
     sys.exit(1)
@@ -56,18 +60,24 @@ class TubeRocketGUI:
         control_frame = ttk.Frame(top_frame)
         control_frame.pack(fill=tk.X, padx=5, pady=(5, 10))
         
-        ttk.Button(control_frame, text="Add Account", command=self.add_account).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(control_frame, text="Edit Account", command=self.edit_account).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(control_frame, text="Delete Account", command=self.delete_account).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(control_frame, text="Proxy Manager", command=self.open_proxy_manager).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(control_frame, text="Refresh", command=self.refresh_accounts).pack(side=tk.LEFT, padx=(0, 10))
+        # Account management buttons
+        ttk.Button(control_frame, text="➕ Add Account", command=self.add_account).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="✏️ Edit Account", command=self.edit_account).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="🗑️ Delete Account", command=self.delete_account).pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Tools
+        ttk.Button(control_frame, text="🌐 Proxy Manager", command=self.open_proxy_manager).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="📤 Export Accounts", command=self.export_accounts).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="📥 Import Accounts", command=self.import_accounts).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="🔄 Refresh", command=self.refresh_accounts).pack(side=tk.LEFT, padx=(0, 10))
         
         ttk.Separator(control_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
         
-        ttk.Button(control_frame, text="Start Selected", command=self.start_selected).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(control_frame, text="Stop Selected", command=self.stop_selected).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(control_frame, text="Start All", command=self.start_all).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(control_frame, text="Stop All", command=self.stop_all).pack(side=tk.LEFT)
+        # Worker control buttons  
+        ttk.Button(control_frame, text="▶️ Start Selected", command=self.start_selected).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="⏹️ Stop Selected", command=self.stop_selected).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="▶️ Start All", command=self.start_all).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(control_frame, text="⏹️ Stop All", command=self.stop_all).pack(side=tk.LEFT)
         
         # Accounts treeview
         tree_frame = ttk.Frame(top_frame)
@@ -109,6 +119,9 @@ class TubeRocketGUI:
         tree_frame.grid_rowconfigure(0, weight=1)
         tree_frame.grid_columnconfigure(0, weight=1)
         
+        # Configure colors for different status
+        self.setup_status_colors()
+        
         # Bottom panel - Logs (smaller)
         bottom_frame = ttk.Frame(main_paned)
         main_paned.add(bottom_frame, weight=1)
@@ -128,6 +141,42 @@ class TubeRocketGUI:
         self.status_bar = ttk.Label(self.root, text="Ready", relief=tk.SUNKEN)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
     
+    def setup_status_colors(self):
+        """Setup color tags for different account statuses"""
+        # Configure tags for different statuses
+        self.accounts_tree.tag_configure('running', background='#E8F5E8', foreground='#2E7D32')      # Light green
+        self.accounts_tree.tag_configure('connecting', background='#FFF3E0', foreground='#F57C00')   # Light orange
+        self.accounts_tree.tag_configure('waiting', background='#FFFDE7', foreground='#F9A825')      # Light yellow
+        self.accounts_tree.tag_configure('error', background='#FFEBEE', foreground='#C62828')        # Light red
+        self.accounts_tree.tag_configure('stopped', background='#F5F5F5', foreground='#616161')      # Light gray
+        self.accounts_tree.tag_configure('inactive', background='#FAFAFA', foreground='#9E9E9E')     # Very light gray
+        self.accounts_tree.tag_configure('banned', background='#FCE4EC', foreground='#AD1457')       # Light pink
+        self.accounts_tree.tag_configure('token_invalid', background='#FFF8E1', foreground='#FF8F00') # Light amber
+    
+    def get_status_tag(self, status):
+        """Get the appropriate tag for a status"""
+        status_lower = status.lower()
+        
+        if 'running' in status_lower:
+            return 'running'
+        elif 'connecting' in status_lower:
+            return 'connecting'
+        elif any(word in status_lower for word in ['waiting', 'processing', 'video']):
+            return 'waiting'
+        elif any(word in status_lower for word in ['error', 'failed']):
+            if 'banned' in status_lower or 'ban' in status_lower:
+                return 'banned'
+            elif 'token' in status_lower and ('invalid' in status_lower or 'expired' in status_lower):
+                return 'token_invalid'
+            else:
+                return 'error'
+        elif 'stopped' in status_lower:
+            return 'stopped'
+        elif 'inactive' in status_lower:
+            return 'inactive'
+        else:
+            return 'inactive'
+    
     def refresh_accounts(self):
         # Clear existing items
         for item in self.accounts_tree.get_children():
@@ -143,22 +192,70 @@ class TubeRocketGUI:
                 except:
                     pass
             
-            # Check token status
-            token_status = "✅ Ready" if account.get('token') else "❌ No Token"
+            # Check token status with colors
+            if account.get('token'):
+                token_status = "✅ Ready"
+            else:
+                token_status = "❌ No Token"
             
+            # Get status tag for coloring
+            status_tag = self.get_status_tag(account['status'])
+            
+            # Insert item with appropriate tag
             self.accounts_tree.insert('', tk.END, values=(
                 account['id'],
                 account['name'],
                 account['email'] or 'Unknown',
                 account['coin'],
-                account['status'],
+                self.format_status_display(account['status']),
                 account['total_videos'],
                 account['total_coins'],
                 token_status,
                 last_run
-            ))
+            ), tags=(status_tag,))
         
         self.status_bar.config(text=f"Loaded {len(accounts)} accounts")
+    
+    def format_status_display(self, status):
+        """Format status text with icons for better visual appeal"""
+        status_lower = status.lower()
+        
+        if 'running' in status_lower:
+            return f"🟢 {status}"
+        elif 'connecting' in status_lower:
+            return f"🟡 {status}"
+        elif any(word in status_lower for word in ['waiting', 'processing']):
+            return f"🟡 {status}"
+        elif 'error' in status_lower:
+            if 'banned' in status_lower or 'ban' in status_lower:
+                return f"🔴 {status}"
+            elif 'token' in status_lower:
+                return f"🟠 {status}"
+            else:
+                return f"🔴 {status}"
+        elif 'stopped' in status_lower:
+            return f"⚪ {status}"
+        elif 'inactive' in status_lower:
+            return f"⚫ {status}"
+        else:
+            return f"⚫ {status}"
+    
+    def update_account_status_display(self, account_id, status):
+        """Update the display of a specific account's status with colors"""
+        # Find the item in treeview
+        for item in self.accounts_tree.get_children():
+            if self.accounts_tree.item(item)['values'][0] == account_id:
+                # Get current values
+                values = list(self.accounts_tree.item(item)['values'])
+                # Update status (index 4)
+                values[4] = self.format_status_display(status)
+                
+                # Get new tag
+                status_tag = self.get_status_tag(status)
+                
+                # Update item
+                self.accounts_tree.item(item, values=values, tags=(status_tag,))
+                break
     
     def add_account(self):
         dialog = AccountDialog(self.root)
@@ -166,7 +263,7 @@ class TubeRocketGUI:
         
         if dialog.result:
             try:
-                self.db.add_account(
+                account_id = self.db.add_account(
                     dialog.result['name'],
                     dialog.result['token_signin'],
                     dialog.result['version_code'],
@@ -178,6 +275,11 @@ class TubeRocketGUI:
                     dialog.result['delay'],
                     dialog.result['config']
                 )
+                
+                # Update real token if provided
+                if dialog.result.get('token'):
+                    self.db.update_account_token(account_id, dialog.result['token'])
+                
                 self.refresh_accounts()
                 self.log_message(f"Added account: {dialog.result['name']}")
             except Exception as e:
@@ -212,6 +314,17 @@ class TubeRocketGUI:
                         dialog.result['delay'],
                         dialog.result['config']
                     )
+                    
+                    # Update real token if changed
+                    current_real_token = account_data.get('token', '')
+                    new_real_token = dialog.result.get('token', '')
+                    if current_real_token != new_real_token:
+                        self.db.update_account_token(account_id, new_real_token)
+                        if new_real_token:
+                            self.log_message(f"[ID:{account_id}] Real token updated manually")
+                        else:
+                            self.log_message(f"[ID:{account_id}] Real token cleared")
+                    
                     self.refresh_accounts()
                     self.log_message(f"Updated account: {dialog.result['name']}")
                 except Exception as e:
@@ -302,12 +415,16 @@ class TubeRocketGUI:
             self.log_message(f"[ID:{account_id}] {data}")
         elif callback_type == 'status':
             self.db.update_account_status(account_id, data['status'], data.get('email'), data.get('coin'))
+            # Update display with colors immediately
+            self.update_account_status_display(account_id, data['status'])
             self.root.after(0, self.refresh_accounts)
         elif callback_type == 'stats':
             self.db.update_account_stats(account_id, data['videos'], data['coins'])
         elif callback_type == 'update_token':
             self.db.update_account_token(account_id, data)
             self.log_message(f"[ID:{account_id}] Updated real token from sign-in")
+            # Refresh to update token status color
+            self.root.after(0, self.refresh_accounts)
     
     def log_message(self, message):
         self.log_text.config(state=tk.NORMAL)
@@ -323,6 +440,230 @@ class TubeRocketGUI:
     
     def open_proxy_manager(self):
         ProxyManager(self.root, self.db)
+
+    def export_accounts(self):
+        """Export accounts to JSON file"""
+        try:
+            accounts = self.db.get_all_accounts()
+            if not accounts:
+                messagebox.showwarning("Warning", "No accounts to export!")
+                return
+            
+            # Ask user what to export
+            export_dialog = ExportDialog(self.root, len(accounts))
+            self.root.wait_window(export_dialog.dialog)
+            
+            if not export_dialog.result:
+                return
+                
+            export_options = export_dialog.result
+            
+            # Choose folder first, then filename
+            folder_path = filedialog.askdirectory(
+                title="Choose Export Folder",
+                initialdir=os.path.expanduser("~/Desktop")
+            )
+            
+            if not folder_path:
+                return
+            
+            # Ask for filename
+            filename = filedialog.asksaveasfilename(
+                title="Save Export File",
+                initialdir=folder_path,
+                defaultextension=".json",
+                initialfile=f"TubeRocket_Accounts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                filetypes=[
+                    ("JSON files", "*.json"),
+                    ("Text files", "*.txt"),
+                    ("All files", "*.*")
+                ]
+            )
+            
+            if not filename:
+                return
+            
+            # Prepare export data
+            export_data = {
+                "export_info": {
+                    "tool": "TubeRocket Multi-Account Manager",
+                    "version": "1.0",
+                    "export_date": datetime.now().isoformat(),
+                    "total_accounts": len(accounts),
+                    "options": export_options
+                },
+                "accounts": []
+            }
+            
+            for account in accounts:
+                account_data = {
+                    "name": account['name'],
+                    "token_signin": account['token_signin'],
+                    "version_code": account['version_code'],
+                    "android": account['android'],
+                    "device": account['device'],
+                    "locale": account['locale'],
+                    "device_token": account['device_token'],
+                    "delay": account['delay'],
+                    "config": account['config']
+                }
+                
+                # Include optional data based on user selection
+                if export_options['include_proxy']:
+                    account_data['proxy'] = account['proxy']
+                
+                if export_options['include_real_token']:
+                    account_data['token'] = account['token']
+                
+                if export_options['include_stats']:
+                    account_data['email'] = account['email']
+                    account_data['coin'] = account['coin']
+                    account_data['status'] = account['status']
+                    account_data['total_videos'] = account['total_videos']
+                    account_data['total_coins'] = account['total_coins']
+                    account_data['last_run'] = account['last_run']
+                
+                export_data["accounts"].append(account_data)
+            
+            # Write to file
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(export_data, f, indent=2, ensure_ascii=False)
+            
+            # Show success message with file location
+            folder_name = os.path.basename(folder_path)
+            file_name = os.path.basename(filename)
+            
+            self.log_message(f"Exported {len(accounts)} accounts to {filename}")
+            messagebox.showinfo("Export Successful", 
+                               f"Successfully exported {len(accounts)} accounts!\n\n"
+                               f"📁 Folder: {folder_name}\n"
+                               f"📄 File: {file_name}\n\n"
+                               f"Options included:\n"
+                               f"• Proxy: {'Yes' if export_options['include_proxy'] else 'No'}\n"
+                               f"• Real Tokens: {'Yes' if export_options['include_real_token'] else 'No'}\n"
+                               f"• Statistics: {'Yes' if export_options['include_stats'] else 'No'}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export accounts: {str(e)}")
+    
+    def import_accounts(self):
+        """Import accounts from JSON file"""
+        try:
+            # Choose file to import
+            file_path = filedialog.askopenfilename(
+                title="Import Accounts",
+                filetypes=[
+                    ("JSON files", "*.json"),
+                    ("Text files", "*.txt"),
+                    ("All files", "*.*")
+                ]
+            )
+            
+            if not file_path:
+                return
+            
+            # Read and validate file
+            with open(file_path, 'r', encoding='utf-8') as f:
+                import_data = json.load(f)
+            
+            if 'accounts' not in import_data:
+                messagebox.showerror("Error", "Invalid file format! Missing 'accounts' data.")
+                return
+            
+            accounts_to_import = import_data['accounts']
+            if not accounts_to_import:
+                messagebox.showwarning("Warning", "No accounts found in the file!")
+                return
+            
+            # Show import preview
+            import_dialog = ImportDialog(self.root, import_data)
+            self.root.wait_window(import_dialog.dialog)
+            
+            if not import_dialog.result:
+                return
+            
+            import_options = import_dialog.result
+            
+            # Import accounts
+            imported_count = 0
+            skipped_count = 0
+            errors = []
+            
+            existing_names = [acc['name'] for acc in self.db.get_all_accounts()]
+            
+            for account_data in accounts_to_import:
+                try:
+                    # Check for required fields
+                    if not account_data.get('name') or not account_data.get('token_signin'):
+                        errors.append(f"Account missing required fields: {account_data.get('name', 'Unknown')}")
+                        continue
+                    
+                    # Check for duplicates
+                    if account_data['name'] in existing_names and not import_options['overwrite_existing']:
+                        skipped_count += 1
+                        continue
+                    
+                    # Prepare account data
+                    name = account_data['name']
+                    token_signin = account_data['token_signin']
+                    version_code = account_data.get('version_code', 187)
+                    android = account_data.get('android', 29)
+                    device = account_data.get('device', '')
+                    locale = account_data.get('locale', 'VN')
+                    device_token = account_data.get('device_token', '')
+                    proxy = account_data.get('proxy', '') if import_options['import_proxy'] else ''
+                    delay = account_data.get('delay', 5)
+                    config = account_data.get('config', {})
+                    
+                    # Handle duplicates
+                    if account_data['name'] in existing_names:
+                        if import_options['overwrite_existing']:
+                            # Update existing account
+                            existing_account = next(acc for acc in self.db.get_all_accounts() if acc['name'] == name)
+                            self.db.update_account(
+                                existing_account['id'], name, token_signin, version_code,
+                                android, device, locale, device_token, proxy, delay, config
+                            )
+                            # Update real token if included
+                            if import_options['import_real_token'] and account_data.get('token'):
+                                self.db.update_account_token(existing_account['id'], account_data['token'])
+                        else:
+                            skipped_count += 1
+                            continue
+                    else:
+                        # Add new account
+                        account_id = self.db.add_account(
+                            name, token_signin, version_code, android, device,
+                            locale, device_token, proxy, delay, config
+                        )
+                        # Update real token if included
+                        if import_options['import_real_token'] and account_data.get('token'):
+                            self.db.update_account_token(account_id, account_data['token'])
+                    
+                    imported_count += 1
+                    
+                except Exception as e:
+                    errors.append(f"Error importing {account_data.get('name', 'Unknown')}: {str(e)}")
+            
+            # Refresh accounts list
+            self.refresh_accounts()
+            
+            # Show results
+            result_msg = f"Import completed!\n\n"
+            result_msg += f"✅ Imported: {imported_count} accounts\n"
+            if skipped_count > 0:
+                result_msg += f"⏭️ Skipped: {skipped_count} accounts (duplicates)\n"
+            if errors:
+                result_msg += f"❌ Errors: {len(errors)} accounts\n\n"
+                result_msg += "Errors:\n" + "\n".join(errors[:5])
+                if len(errors) > 5:
+                    result_msg += f"\n... and {len(errors) - 5} more errors"
+            
+            self.log_message(f"Imported {imported_count} accounts from {file_path}")
+            messagebox.showinfo("Import Results", result_msg)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to import accounts: {str(e)}")
 
 def main():
     root = tk.Tk()

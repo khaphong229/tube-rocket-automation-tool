@@ -111,6 +111,7 @@ class TubeRocketWorker(Thread):
             # Check if we have real token and test it first
             if self.real_token:
                 self.log("Found existing real token, testing validity...")
+                self.update_status("Checking Token")
                 if self.test_token_validity():
                     self.log("Existing real token is valid, using it")
                 else:
@@ -120,6 +121,7 @@ class TubeRocketWorker(Thread):
             # Get new token only if needed
             if not self.real_token:
                 self.log("No valid real token, performing sign-in...")
+                self.update_status("Signing In")
                 self.real_token = self.perform_signin()
             
             # Update headers with real token
@@ -128,6 +130,7 @@ class TubeRocketWorker(Thread):
                 "token": self.real_token,
             }
             
+            self.update_status("Getting Account Info")
             response = self.session.get("http://tuberocket.app:3000/api/member", headers=head_get_info)
             
             if response.status_code != 200:
@@ -154,11 +157,13 @@ class TubeRocketWorker(Thread):
             while not self.stop_event.is_set():
                 try:
                     # Get video
+                    self.update_status("Getting Video", email, coin)
                     response = self.session.get("http://tuberocket.app:3000/api/video", headers=head_get_info)
                     
                     # Check if token expired/invalid
                     if response.status_code in [401, 403]:
                         self.log("Token appears to be expired/invalid, refreshing...")
+                        self.update_status("Refreshing Token", email, coin)
                         try:
                             self.real_token = self.perform_signin()
                             # Update headers with new token
@@ -178,6 +183,7 @@ class TubeRocketWorker(Thread):
                     # Check if response indicates token issue
                     if get_video.get("retCode") != 0 and "token" in str(get_video.get("retMessage", "")).lower():
                         self.log("API response indicates token issue, refreshing...")
+                        self.update_status("Token Invalid - Refreshing", email, coin)
                         try:
                             self.real_token = self.perform_signin()
                             head_get_info["token"] = self.real_token
@@ -191,6 +197,7 @@ class TubeRocketWorker(Thread):
                     time_video = get_video["result"]["playSecond"]
                     
                     self.log(f"Processing video {id_video} - Wait {time_video} seconds")
+                    self.update_status(f"Processing Video ({time_video}s)", email, coin)
                     
                     # Reset error counter on successful video fetch
                     consecutive_errors = 0
@@ -202,9 +209,12 @@ class TubeRocketWorker(Thread):
                     for i in range(actual_wait, 0, -1):
                         if self.stop_event.is_set():
                             return
+                        # Update countdown status
+                        self.update_status(f"Watching Video ({i}s left)", email, coin)
                         time.sleep(1)
                     
                     # Receive coin
+                    self.update_status("Submitting Video", email, coin)
                     data_receive_coin = {
                         "id": id_video,
                         "playCount": 0,
@@ -222,6 +232,7 @@ class TubeRocketWorker(Thread):
                     # Handle token issues in submit video API
                     if response.status_code in [401, 403]:
                         self.log("Token expired during video submission, refreshing...")
+                        self.update_status("Token Expired - Refreshing", email, coin)
                         try:
                             self.real_token = self.perform_signin()
                             head_get_info["token"] = self.real_token
@@ -256,7 +267,11 @@ class TubeRocketWorker(Thread):
                     # Random delay between videos
                     if not self.stop_event.is_set():
                         random_wait = random.randint(delay, delay + 3)
-                        time.sleep(random_wait)
+                        for i in range(random_wait, 0, -1):
+                            if self.stop_event.is_set():
+                                return
+                            self.update_status(f"Waiting ({i}s)", email, received_coin)
+                            time.sleep(1)
                 
                 except Exception as e:
                     error_msg = str(e)
@@ -272,6 +287,7 @@ class TubeRocketWorker(Thread):
                     # If too many consecutive errors, try refreshing token
                     if consecutive_errors >= max_consecutive_errors:
                         self.log(f"Too many consecutive errors ({consecutive_errors}), attempting token refresh...")
+                        self.update_status("Error - Refreshing Token")
                         try:
                             self.real_token = self.perform_signin()
                             head_get_info["token"] = self.real_token
@@ -282,16 +298,25 @@ class TubeRocketWorker(Thread):
                             self.log(f"Failed to refresh token after errors: {refresh_error}")
                             self.update_status("Error - Token Refresh Failed")
                             break
+                    else:
+                        self.update_status(f"Error - Retrying ({consecutive_errors}/{max_consecutive_errors})")
                     
                     # Wait before retry
                     if not self.stop_event.is_set():
                         wait_time = min(10 * consecutive_errors, 60)  # Exponential backoff, max 60s
                         self.log(f"Waiting {wait_time} seconds before retry...")
-                        time.sleep(wait_time)
+                        for i in range(wait_time, 0, -1):
+                            if self.stop_event.is_set():
+                                return
+                            self.update_status(f"Error - Retry in {i}s")
+                            time.sleep(1)
         
         except Exception as e:
             self.log(f"Connection error: {str(e)}")
-            self.update_status("Error")
+            if "token" in str(e).lower() and any(word in str(e).lower() for word in ['invalid', 'expired']):
+                self.update_status("Error - Token Invalid")
+            else:
+                self.update_status("Error - Connection Failed")
         
         finally:
             if not self.stop_event.is_set():
